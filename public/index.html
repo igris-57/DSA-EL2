@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Event Aggregator | Fenwick Tree</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <header>
+        <div class="container">
+            <h1>System Log Event Aggregation Platform</h1>
+            <p class="subtitle">Real-time log analysis using Fenwick Tree (Binary Indexed Tree)</p>
+        </div>
+    </header>
+
+    <main class="container">
+
+        <!-- Live Counters -->
+        <section id="live-counters">
+            <h2 class="section-title"><i class="fas fa-chart-line"></i> Live Event Counts</h2>
+            <div class="cards-grid">
+                <div class="card error" data-type="ERROR">
+                    <div class="icon"><i class="fas fa-exclamation-circle"></i></div>
+                    <div class="details">
+                        <h3>ERROR</h3>
+                        <span class="count" id="count-ERROR">0</span>
+                    </div>
+                </div>
+                <div class="card warning" data-type="WARNING">
+                    <div class="icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="details">
+                        <h3>WARNING</h3>
+                        <span class="count" id="count-WARNING">0</span>
+                    </div>
+                </div>
+                <div class="card info" data-type="INFO">
+                    <div class="icon"><i class="fas fa-info-circle"></i></div>
+                    <div class="details">
+                        <h3>INFO</h3>
+                        <span class="count" id="count-INFO">0</span>
+                    </div>
+                </div>
+                <div class="card debug" data-type="DEBUG">
+                    <div class="icon"><i class="fas fa-bug"></i></div>
+                    <div class="details">
+                        <h3>DEBUG</h3>
+                        <span class="count" id="count-DEBUG">0</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="dashboard-grid">
+
+            <!-- Query Section -->
+            <section id="query-section" class="panel">
+                <h2 class="panel-title"><i class="fas fa-search"></i> Range Query</h2>
+                <div class="query-controls">
+                    <div class="form-group">
+                        <label>Event Type</label>
+                        <select id="query-type">
+                            <option value="ERROR">ERROR</option>
+                            <option value="WARNING">WARNING</option>
+                            <option value="INFO">INFO</option>
+                            <option value="DEBUG">DEBUG</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Start Time</label>
+                        <input type="datetime-local" id="query-start">
+                    </div>
+                    <div class="form-group">
+                        <label>End Time</label>
+                        <input type="datetime-local" id="query-end">
+                    </div>
+                    <button id="btn-query" class="btn btn-primary">Run Query</button>
+                </div>
+
+                <div id="query-results" class="results-box hidden">
+                    <!-- Results injected here -->
+                </div>
+            </section>
+
+            <!-- Recent Events -->
+            <section id="recent-events" class="panel">
+                <h2 class="panel-title"><i class="fas fa-history"></i> Live Event Stream</h2>
+                <div class="event-list-container">
+                    <ul id="event-list">
+                        <!-- Stream items injected here -->
+                    </ul>
+                </div>
+            </section>
+        </div>
+
+        <!-- Performance Section -->
+        <section id="performance" class="panel full-width">
+            <h2 class="panel-title"><i class="fas fa-tachometer-alt"></i> Performance Benchmark</h2>
+            <p class="description">Compare Fenwick Tree range queries against naive array iteration (10,000 ops).</p>
+            <button id="btn-performance" class="btn btn-secondary">Run Performance Test</button>
+            <div id="performance-results" class="results-grid hidden">
+                <!-- Performance cards injected here -->
+            </div>
+        </section>
+
+    </main>
+
+    <footer>
+        <div class="container">
+            <p class="project-info">DSA Experiential Learning 2024-25</p>
+            <p class="team">Team: Sathvik K Y, Sashank Talapaneni</p>
+            <p class="college">RV College of Engineering</p>
+        </div>
+    </footer>
+
+    <!-- Loading Spinner Overlay -->
+    <div id="loading-overlay" class="hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
