@@ -20,109 +20,179 @@
 
 <body>
 
-    <header>
+    <!-- Navigation -->
+    <nav>
         <div class="container">
-            <h1>System Log Event Aggregation Platform</h1>
-            <p class="subtitle">Real-time log analysis using Fenwick Tree (Binary Indexed Tree)</p>
+            <ul class="nav-links">
+                <li id="tab-link-dashboard" class="nav-item active" data-tab="dashboard">
+                    <i class="fas fa-chart-line"></i> Dashboard
+                </li>
+                <li id="tab-link-about" class="nav-item" data-tab="about">
+                    <i class="fas fa-info-circle"></i> About
+                </li>
+            </ul>
+            <button id="theme-toggle" class="theme-toggle-btn" title="Toggle Light/Dark Mode">
+                <i class="fas fa-moon" id="theme-icon"></i>
+            </button>
         </div>
-    </header>
+    </nav>
 
-    <main class="container">
-
-        <!-- Live Counters -->
-        <section id="live-counters">
-            <h2 class="section-title"><i class="fas fa-chart-line"></i> Live Event Counts</h2>
-            <div class="cards-grid">
-                <div class="card error" data-type="ERROR">
-                    <div class="icon"><i class="fas fa-exclamation-circle"></i></div>
-                    <div class="details">
-                        <h3>ERROR</h3>
-                        <span class="count" id="count-ERROR">0</span>
-                    </div>
-                </div>
-                <div class="card warning" data-type="WARNING">
-                    <div class="icon"><i class="fas fa-exclamation-triangle"></i></div>
-                    <div class="details">
-                        <h3>WARNING</h3>
-                        <span class="count" id="count-WARNING">0</span>
-                    </div>
-                </div>
-                <div class="card info" data-type="INFO">
-                    <div class="icon"><i class="fas fa-info-circle"></i></div>
-                    <div class="details">
-                        <h3>INFO</h3>
-                        <span class="count" id="count-INFO">0</span>
-                    </div>
-                </div>
-                <div class="card debug" data-type="DEBUG">
-                    <div class="icon"><i class="fas fa-bug"></i></div>
-                    <div class="details">
-                        <h3>DEBUG</h3>
-                        <span class="count" id="count-DEBUG">0</span>
-                    </div>
-                </div>
+    <div id="tab-dashboard" class="tab-pane active">
+        <header>
+            <div class="container">
+                <h1>Advanced GitHub Analytics</h1>
+                <p class="subtitle">Real-time stats powered by <strong>Fenwick Tree (BIT)</strong></p>
+                <p class="disclaimer"><i class="fas fa-info-circle"></i> Events reflect real GitHub activity and may
+                    appear
+                    with short delays due to API behavior.</p>
             </div>
-        </section>
+        </header>
 
-        <div class="dashboard-grid">
-
-            <!-- Query Section -->
-            <section id="query-section" class="panel">
-                <h2 class="panel-title"><i class="fas fa-search"></i> Range Query</h2>
-                <div class="query-controls">
-                    <div class="form-group">
-                        <label>Event Type</label>
-                        <select id="query-type">
-                            <option value="ERROR">ERROR</option>
-                            <option value="WARNING">WARNING</option>
-                            <option value="INFO">INFO</option>
-                            <option value="DEBUG">DEBUG</option>
-                        </select>
+        <main class="container">
+            <!-- Analytics Dashboard -->
+            <section id="analytics-dashboard">
+                <h2 class="section-title"><i class="fas fa-chart-pie"></i> Real-time BIT Analytics</h2>
+                <div class="cards-grid">
+                    <div class="card info">
+                        <div class="icon"><i class="fas fa-clock"></i></div>
+                        <div class="details">
+                            <h3>Last 5 Mins</h3>
+                            <span class="count" id="stat-5min">0</span>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Start Time</label>
-                        <input type="datetime-local" id="query-start">
+                    <div class="card warning">
+                        <div class="icon"><i class="fas fa-history"></i></div>
+                        <div class="details">
+                            <h3>Last 15 Mins</h3>
+                            <span class="count" id="stat-15min">0</span>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>End Time</label>
-                        <input type="datetime-local" id="query-end">
+                    <div class="card accent">
+                        <div class="icon"><i class="fas fa-calendar-check"></i></div>
+                        <div class="details">
+                            <h3>Last 60 Mins</h3>
+                            <span class="count" id="stat-60min">0</span>
+                        </div>
                     </div>
-                    <button id="btn-query" class="btn btn-primary">Run Query</button>
-                </div>
-
-                <div id="query-results" class="results-box hidden">
-                    <!-- Results injected here -->
+                    <div class="card error">
+                        <div class="icon"><i class="fas fa-fire-alt"></i></div>
+                        <div class="details">
+                            <h3>Peak Activity</h3>
+                            <span class="count" id="stat-peak">0</span>
+                            <p id="peak-time" style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.25rem;">0 mins ago
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </section>
 
-            <!-- Recent Events -->
-            <section id="recent-events" class="panel">
-                <h2 class="panel-title"><i class="fas fa-history"></i> Live Event Stream</h2>
-                <div class="event-list-container">
-                    <ul id="event-list">
-                        <!-- Stream items injected here -->
-                    </ul>
-                </div>
-            </section>
-        </div>
+            <div class="dashboard-grid">
+                <!-- Distribution Chart -->
+                <section id="distribution-section" class="panel">
+                    <h2 class="panel-title"><i class="fas fa-chart-bar"></i> Event Type Distribution</h2>
+                    <div class="chart-container" style="position: relative; height:300px; width:100%">
+                        <canvas id="distribution-chart"></canvas>
+                    </div>
+                </section>
 
-        <!-- Performance Section -->
-        <section id="performance" class="panel full-width">
-            <h2 class="panel-title"><i class="fas fa-tachometer-alt"></i> Performance Benchmark</h2>
-            <p class="description">Compare Fenwick Tree range queries against naive array iteration (10,000 ops).</p>
-            <button id="btn-performance" class="btn btn-secondary">Run Performance Test</button>
-            <div id="performance-results" class="results-grid hidden">
-                <!-- Performance cards injected here -->
+                <!-- Live Stream -->
+                <section id="recent-events" class="panel">
+                    <h2 class="panel-title"><i class="fas fa-bolt"></i> Live Activity Feed</h2>
+                    <div class="event-list-container">
+                        <ul id="event-list">
+                            <!-- Stream items injected here -->
+                        </ul>
+                    </div>
+                </section>
             </div>
-        </section>
 
-    </main>
+            <section id="explanation" class="panel full-width">
+                <h2 class="panel-title"><i class="fas fa-graduation-cap"></i> Why a Fenwick Tree?</h2>
+                <p class="description" style="margin-bottom: 0.5rem;">
+                    In a real-time system with frequent updates (like high-traffic server logs), calculating global
+                    statistics in O(n) becomes inefficient.
+                    The <strong>Fenwick Tree (Binary Indexed Tree)</strong> optimizes this:
+                </p>
+                <ul style="padding-left: 1.5rem; color: var(--text-secondary); line-height: 1.6;">
+                    <li><strong>O(log N) Updates:</strong> Fast enough to handle real-time event ingestion.</li>
+                    <li><strong>O(log N) Range Queries:</strong> Instantly computes activity for any time window (last
+                        5m,
+                        15m, 1h).</li>
+                    <li><strong>Memory Efficient:</strong> Minimal space overhead compared to other tree structures.
+                    </li>
+                </ul>
+            </section>
+        </main>
+    </div>
+
+    <div id="tab-about" class="tab-pane">
+        <header>
+            <div class="container">
+                <h1>About the Project</h1>
+                <p class="subtitle">Platform design, core objectives, and technical stack</p>
+            </div>
+        </header>
+
+        <main class="container">
+            <div class="about-grid">
+                <div class="about-content panel">
+                    <h2 class="panel-title"><i class="fas fa-project-diagram"></i> Project Overview</h2>
+                    <p>The GitHub Real-Time Analytics Platform is a full-stack system designed to demonstrate
+                        high-performance data processing using advanced algorithmic concepts.</p>
+
+                    <h3>Why Fenwick Tree (BIT)?</h3>
+                    <p>Standard array-based accumulation takes <strong>O(n)</strong> time for range queries. In
+                        high-traffic scenarios, this becomes a bottleneck. The BIT structure reduces both update and
+                        query complexity to <strong>O(log n)</strong>, allowing us to maintain real-time rolling-window
+                        statistics across thousands of incoming events effortlessly.</p>
+
+                    <h3>Real Data vs Simulated Logs</h3>
+                    <p>By consuming the <strong>GitHub Public Events API</strong>, we expose the system to real-world
+                        edge cases like asynchronous delivery, burst traffic, and ingest delays. This provides a more
+                        rigorous test for the algorithm than static, simulated data.</p>
+
+                    <h3>Design Principles</h3>
+                    <p>The system follows a <strong>"Source-to-Stat"</strong> pipeline: real events are normalized into
+                        minute-based slots on arrival and immediately contributed to the main and per-type trees. A
+                        lightweight maintenance routine handles the sliding window by incrementally decrementing
+                        aged-out contributions.</p>
+                </div>
+
+                <div class="about-sidebar">
+                    <div class="team-card panel" style="margin-bottom: 2rem;">
+                        <h2 class="panel-title"><i class="fas fa-users"></i> Team Members</h2>
+                        <ul>
+                            <li><strong>Sathvik K Y</strong> <span
+                                    style="display:block; font-size: 0.8rem; opacity: 0.7;">Backend Developer & BIT
+                                    Specialist</span></li>
+                            <li><strong>Sashank Talapaneni</strong> <span
+                                    style="display:block; font-size: 0.8rem; opacity: 0.7;">Frontend Architect & UI
+                                    Designer</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="panel">
+                        <h2 class="panel-title"><i class="fas fa-layer-group"></i> Tech Stack</h2>
+                        <ul class="tech-stack-list">
+                            <li class="tech-item"><span>Frontend</span> <strong>Vanilla JS, Chart.js</strong></li>
+                            <li class="tech-item"><span>Backend</span> <strong>Node.js, Express</strong></li>
+                            <li class="tech-item"><span>Data Structure</span> <strong>Fenwick Tree (BIT)</strong></li>
+                            <li class="tech-item"><span>Data Source</span> <strong>GitHub Events API</strong></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
 
     <footer>
-        <div class="container">
-            <p class="project-info">DSA Experiential Learning 2024-25</p>
-            <p class="team">Team: Sathvik K Y, Sashank Talapaneni</p>
-            <p class="college">RV College of Engineering</p>
+        <div class="container footer-content">
+            <div class="footer-info">
+                DSA Experiential Learning | GitHub Analytics Platform
+            </div>
+            <div class="footer-links">
+                <span style="opacity: 0.8;">Fenwick Tree (BIT) Implementation</span>
+            </div>
         </div>
     </footer>
 
@@ -131,6 +201,8 @@
         <div class="spinner"></div>
     </div>
 
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="app.js"></script>
 </body>
 

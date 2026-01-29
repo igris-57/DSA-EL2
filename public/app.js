@@ -1,380 +1,266 @@
 /**
- * System Log Event Aggregator - Dashboard Logic
- * Handles real-time updates, visualizations, and API interactions.
+ * Advanced GitHub Analytics - Dashboard Logic
+ * Powered by Fenwick Tree (BIT) on the backend.
  */
 
 // --- Global Constants & State ---
 const API_BASE = 'http://localhost:3000/api';
-const REFRESH_INTERVAL = 2000; // 2 seconds
+const REFRESH_INTERVAL = 10000; // Poll backend every 10s for UI updates
 
-// State to track previous values for animation
 const state = {
-    counts: {
-        ERROR: 0,
-        WARNING: 0,
-        INFO: 0,
-        DEBUG: 0
-    },
-    recentEvents: [],
+    stats: null,
+    liveEvents: [],
+    chart: null,
     isFetching: false
 };
 
 // --- DOM Elements ---
 const elements = {
-    counters: {
-        ERROR: document.getElementById('count-ERROR'),
-        WARNING: document.getElementById('count-WARNING'),
-        INFO: document.getElementById('count-INFO'),
-        DEBUG: document.getElementById('count-DEBUG'),
+    stats: {
+        '5min': document.getElementById('stat-5min'),
+        '15min': document.getElementById('stat-15min'),
+        '60min': document.getElementById('stat-60min'),
+        'peak': document.getElementById('stat-peak'),
+        'peakTime': document.getElementById('peak-time')
     },
-    recentEventsList: document.getElementById('event-list'),
-
-    // Query Form
-    queryBtn: document.getElementById('btn-query'),
-    queryType: document.getElementById('query-type'),
-    queryStart: document.getElementById('query-start'),
-    queryEnd: document.getElementById('query-end'),
-    queryResults: document.getElementById('query-results'),
-
-    // Performance
-    perfBtn: document.getElementById('btn-performance'),
-    perfResults: document.getElementById('performance-results'),
-
-    // Loading
-    loadingOverlay: document.getElementById('loading-overlay')
+    eventList: document.getElementById('event-list'),
+    chartCanvas: document.getElementById('distribution-chart')
 };
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
-    init();
+    initTheme();
+    initTabs();
+    initChart();
+    updateDashboard();
+    setInterval(updateDashboard, REFRESH_INTERVAL);
 });
 
-function init() {
-    // Set default query time range (Past 24 hours)
-    setDefaultQueryDates();
+/**
+ * 1. Theme Management (Dark/Light Mode)
+ */
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    if (savedTheme === 'light') {
+        document.body.classList.add('light-theme');
+    }
+    updateThemeIcon(savedTheme);
 
-    // Start polling
-    fetchStats();
-    setInterval(fetchStats, REFRESH_INTERVAL);
-
-    // Event Listeners
-    elements.queryBtn.addEventListener('click', handleQuery);
-    elements.perfBtn.addEventListener('click', runPerformanceTest);
+    const toggleBtn = document.getElementById('theme-toggle');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+            const isLight = document.body.classList.toggle('light-theme');
+            const newTheme = isLight ? 'light' : 'dark';
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon(newTheme);
+            updateChartTheme(newTheme);
+        });
+    }
 }
 
-// --- Core Functions ---
+function updateThemeIcon(theme) {
+    const icon = document.getElementById('theme-icon');
+    if (icon) {
+        icon.className = theme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
+    }
+}
 
 /**
- * 1. Fetch Stats
- * Polls the server for current counts and recent events.
+ * 2. Tab Management
  */
-async function fetchStats() {
+function initTabs() {
+    const tabLinks = document.querySelectorAll('.nav-item');
+    tabLinks.forEach(link => {
+        link.addEventListener('click', () => {
+            const tabId = link.getAttribute('data-tab');
+            switchTab(tabId);
+        });
+    });
+}
+
+function switchTab(tabId) {
+    // Update Nav
+    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+    document.getElementById(`tab-link-${tabId}`).classList.add('active');
+
+    // Update Content
+    document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+    document.getElementById(`tab-${tabId}`).classList.add('active');
+}
+
+/**
+ * 3. Initialize Chart.js
+ */
+function initChart() {
+    if (!elements.chartCanvas) return;
+
+    const theme = localStorage.getItem('theme') || 'dark';
+    const textColor = theme === 'light' ? '#64748b' : '#9ca3af';
+    const gridColor = theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
+
+    state.chart = new Chart(elements.chartCanvas, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Event Count (Last Hour)',
+                data: [],
+                backgroundColor: 'rgba(139, 92, 246, 0.4)',
+                borderColor: 'rgba(139, 92, 246, 1)',
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: gridColor },
+                    ticks: { color: textColor }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: textColor }
+                }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+}
+
+function updateChartTheme(theme) {
+    if (!state.chart) return;
+    const textColor = theme === 'light' ? '#64748b' : '#9ca3af';
+    const gridColor = theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
+
+    state.chart.options.scales.y.ticks.color = textColor;
+    state.chart.options.scales.y.grid.color = gridColor;
+    state.chart.options.scales.x.ticks.color = textColor;
+    state.chart.update();
+}
+
+/**
+ * 2. Update Dashboard - Fetch from Backend
+ */
+async function updateDashboard() {
     if (state.isFetching) return;
     state.isFetching = true;
 
     try {
-        const response = await fetch(`${API_BASE}/stats`);
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        // Fetch Live Stream
+        const streamRes = await fetch(`${API_BASE}/events/live`);
+        const liveEvents = await streamRes.json();
+        renderStream(liveEvents);
 
-        const data = await response.json();
+        // Fetch BIT Analytics
+        const statsRes = await fetch(`${API_BASE}/stats/dashboard`);
+        const stats = await statsRes.json();
+        renderStats(stats);
+        updateChart(stats.distribution);
 
-        // Update UI
-        updateCounters(data.counts);
-        updateRecentEvents(data.recentEvents);
-
-    } catch (error) {
-        console.error('Failed to fetch stats:', error);
+    } catch (err) {
+        console.error('Failed to update dashboard:', err);
     } finally {
         state.isFetching = false;
     }
 }
 
 /**
- * 2. Update Counters
- * Animates counter changes.
+ * 3. Render BIT Stats
  */
-function updateCounters(newCounts) {
-    if (!newCounts) return;
+function renderStats(stats) {
+    if (elements.stats['5min']) elements.stats['5min'].textContent = stats.last5min;
+    if (elements.stats['15min']) elements.stats['15min'].textContent = stats.last15min;
+    if (elements.stats['60min']) elements.stats['60min'].textContent = stats.last60min;
 
-    Object.keys(elements.counters).forEach(type => {
-        const el = elements.counters[type];
-        if (el) {
-            const startVal = state.counts[type] || 0;
-            const endVal = newCounts[type] || 0;
+    if (elements.stats['peak']) {
+        elements.stats['peak'].textContent = stats.peak.count;
+    }
+    if (elements.stats['peakTime']) {
+        elements.stats['peakTime'].textContent = `${stats.peak.minutesAgo} mins ago`;
+    }
 
-            if (startVal !== endVal) {
-                animateValue(el, startVal, endVal, 1000);
-                state.counts[type] = endVal; // Update state
-            }
+    // Handle Rate Limit Notice
+    const disclaimer = document.querySelector('.disclaimer');
+    if (disclaimer && stats.api) {
+        if (stats.api.isRateLimited) {
+            const resetTime = new Date(stats.api.resetTime * 1000).toLocaleTimeString();
+            disclaimer.style.color = 'var(--color-error)';
+            disclaimer.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Rate Limited. Resets at ${resetTime}. Add GITHUB_TOKEN to .env to fix.`;
+        } else {
+            disclaimer.style.color = ''; // Reset
+            disclaimer.innerHTML = `<i class="fas fa-info-circle"></i> Events reflect real GitHub activity and may appear with short delays due to API behavior.`;
         }
-    });
+    }
 }
 
 /**
- * 3. Update Recent Events
- * Displays the last 10-20 events with formatting.
+ * 4. Update Distribution Chart
  */
-function updateRecentEvents(events) {
-    if (!events || !Array.isArray(events)) return;
+function updateChart(distribution) {
+    if (!state.chart) return;
 
-    const list = elements.recentEventsList;
-    list.innerHTML = ''; // Clear current
+    const labels = Object.keys(distribution);
+    const data = Object.values(distribution);
 
-    // Take last 15
-    const showEvents = events.slice(0, 15);
+    state.chart.data.labels = labels;
+    state.chart.data.datasets[0].data = data;
+    state.chart.update();
+}
 
-    showEvents.forEach(evt => {
+/**
+ * 5. Render Live Stream
+ */
+function renderStream(events) {
+    const list = elements.eventList;
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    if (events.length === 0) {
+        list.innerHTML = `<li class="event-item" style="justify-content: center; opacity: 0.5;">Waiting for GitHub events...</li>`;
+        return;
+    }
+
+    events.forEach(evt => {
         const li = document.createElement('li');
         li.className = 'event-item';
 
-        // Parse date for relative time
-        const dateObj = new Date(evt.date);
-        const relTime = formatRelativeTime(dateObj);
+        const type = evt.type.replace('Event', '');
+        const createdTime = formatRelativeTime(new Date(evt.created_at));
+        const ingestedTime = new Date(evt.ingested_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
         li.innerHTML = `
-            <div style="display:flex; align-items:center; gap: 1rem;">
-                <span class="badge ${evt.type}">${evt.type}</span>
-                <span style="font-size: 0.85rem; color: var(--text-primary); opacity: 0.8;">Event ID: ${Math.floor(Math.random() * 10000)}</span>
+            <div style="display:flex; flex-direction:column; gap: 0.25rem; flex: 1;">
+                <div style="display:flex; align-items:center; gap: 1rem;">
+                    <span class="badge ${type}">${type}</span>
+                    <span style="font-size: 0.85rem; color: var(--text-primary);">
+                        <strong>${evt.actor.display_login}</strong> at <i>${evt.repo.name}</i>
+                    </span>
+                </div>
+                <div style="font-size: 0.7rem; color: var(--text-secondary); margin-left: 115px; opacity: 0.6;">
+                    Event Time (GitHub): ${createdTime} | Received by Server: ${ingestedTime}
+                </div>
             </div>
-            <span class="time" title="${dateObj.toLocaleString()}">${relTime}</span>
+            <span class="time">${createdTime}</span>
         `;
         list.appendChild(li);
     });
 }
 
 /**
- * 4. Handle Query
- * Performs a range query on the backend.
- */
-async function handleQuery(e) {
-    if (e) e.preventDefault();
-
-    const type = elements.queryType.value;
-    const startTimeStr = elements.queryStart.value;
-    const endTimeStr = elements.queryEnd.value;
-
-    // Validation
-    if (!startTimeStr || !endTimeStr) {
-        alert('Please select a valid time range.');
-        return;
-    }
-
-    const startTime = new Date(startTimeStr).getTime();
-    const endTime = new Date(endTimeStr).getTime();
-
-    if (startTime > endTime) {
-        alert('Start time cannot be after end time.');
-        return;
-    }
-
-    showLoading();
-    elements.queryResults.classList.add('hidden');
-
-    try {
-        const url = `${API_BASE}/query?type=${type}&startTime=${startTime}&endTime=${endTime}`;
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.error) {
-            renderQueryResultError(data.error);
-        } else {
-            renderQueryResult(data);
-        }
-    } catch (err) {
-        console.error('Query Error:', err);
-        renderQueryResultError('Failed to execute query. Check console.');
-    } finally {
-        hideLoading();
-    }
-}
-
-function renderQueryResult(data) {
-    const { type, count, timeMs, range } = data;
-
-    // Safety check for undefined
-    const safeCount = count !== undefined ? count : 0;
-    const safeTime = timeMs !== undefined ? timeMs.toFixed(3) : '0.000';
-
-    elements.queryResults.innerHTML = `
-        <div class="result-summary">
-            <h3 style="color: var(--color-accent); margin-bottom: 0.5rem;">Query Results</h3>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                <div>
-                    <p class="description">Event Type</p>
-                    <strong style="font-size: 1.2rem; color: var(--text-primary)">${type}</strong>
-                </div>
-                <div>
-                     <p class="description">Total Count</p>
-                    <strong style="font-size: 1.5rem; color: var(--color-${type.toLowerCase()})">${formatNumber(safeCount)}</strong>
-                </div>
-                <div>
-                    <p class="description">Execution Time</p>
-                    <strong style="font-family: monospace; color: var(--color-debug)">${safeTime} ms</strong>
-                </div>
-                <div>
-                     <p class="description">Internal index range</p>
-                    <code style="background: rgba(0,0,0,0.3); padding: 2px 5px; border-radius: 4px;">[${range.lIndex}, ${range.rIndex}]</code>
-                </div>
-            </div>
-        </div>
-    `;
-    elements.queryResults.classList.remove('hidden');
-}
-
-function renderQueryResultError(msg) {
-    elements.queryResults.innerHTML = `<p style="color: var(--color-error); font-weight: bold;">Error: ${msg}</p>`;
-    elements.queryResults.classList.remove('hidden');
-}
-
-/**
- * 5. Run Performance Test
- * Compares Fenwick Tree vs Naive approach.
- */
-async function runPerformanceTest() {
-    showLoading();
-    elements.perfResults.classList.add('hidden');
-
-    try {
-        const res = await fetch(`${API_BASE}/performance`);
-        const data = await res.json();
-
-        elements.perfResults.innerHTML = '';
-
-        Object.keys(data).forEach(type => {
-            const metrics = data[type];
-            const card = document.createElement('div');
-            card.className = 'perf-card';
-
-            // Calculate improvement just for display logic if not provided
-            // Speedup is usually (naive / fenwick)
-
-            card.innerHTML = `
-                <h4>${type}</h4>
-                <div class="perf-metric">
-                    <span>Fenwick Tree (O(log n)):</span>
-                    <strong style="color: var(--color-accent)">${metrics.fenwickTimeMs.toFixed(4)} ms</strong>
-                </div>
-                <div class="perf-metric">
-                    <span>Naive Loop (O(n)):</span>
-                    <strong style="color: var(--text-secondary)">${metrics.naiveTimeMs.toFixed(4)} ms</strong>
-                </div>
-                <div class="speedup">
-                    ${metrics.speedup} Faster
-                    <i class="fas fa-bolt"></i>
-                </div>
-                <div style="margin-top: 5px; font-size: 0.75rem; opacity: 0.5; text-align: right;">
-                    ${formatNumber(metrics.iterations)} iterations
-                </div>
-            `;
-            elements.perfResults.appendChild(card);
-        });
-
-        elements.perfResults.classList.remove('hidden');
-
-    } catch (err) {
-        console.error('Performance Test Error:', err);
-        alert('Failed to run performance test.');
-    } finally {
-        hideLoading();
-    }
-}
-
-// --- Helper Functions ---
-
-/**
- * 6. Format Relative Time
- * e.g., "5 seconds ago", "2 minutes ago"
+ * Helper: Format Relative Time
  */
 function formatRelativeTime(date) {
     const now = new Date();
-    const diffMs = now - date;
-    const diffSec = Math.floor(diffMs / 1000);
+    const diffSec = Math.floor((now - date) / 1000);
 
-    if (diffSec < 10) return 'Just now';
-    if (diffSec < 60) return `${diffSec} seconds ago`;
-
+    if (diffSec < 60) return 'Just now';
     const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin} minute${diffMin !== 1 ? 's' : ''} ago`;
-
-    const diffHour = Math.floor(diffMin / 60);
-    if (diffHour < 24) return `${diffHour} hour${diffHour !== 1 ? 's' : ''} ago`;
-
-    return date.toLocaleDateString();
-}
-
-/**
- * 7. Format Number
- * Adds commas to numbers
- */
-function formatNumber(num) {
-    return num.toLocaleString('en-US');
-}
-
-/**
- * 8. Animate Value
- * Smoothly transitions a number from start to end
- */
-function animateValue(obj, start, end, duration) {
-    let startTimestamp = null;
-    const step = (timestamp) => {
-        if (!startTimestamp) startTimestamp = timestamp;
-        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
-
-        // Easing (optional, simple linear for now)
-        // const ease = 1 - Math.pow(1 - progress, 3); // cubicOut
-
-        const currentVal = Math.floor(progress * (end - start) + start);
-        obj.innerHTML = formatNumber(currentVal);
-
-        if (progress < 1) {
-            window.requestAnimationFrame(step);
-        } else {
-            obj.innerHTML = formatNumber(end); // Ensure final value is exact
-        }
-    };
-    window.requestAnimationFrame(step);
-}
-
-/**
- * 9. Get Event Color
- */
-function getEventColor(type) {
-    switch (type) {
-        case 'ERROR': return 'var(--color-error)';
-        case 'WARNING': return 'var(--color-warning)';
-        case 'INFO': return 'var(--color-info)';
-        case 'DEBUG': return 'var(--color-debug)';
-        default: return 'var(--text-primary)';
-    }
-}
-
-/**
- * 10. Loaders
- */
-function showLoading() {
-    if (elements.loadingOverlay) elements.loadingOverlay.classList.remove('hidden');
-}
-
-function hideLoading() {
-    if (elements.loadingOverlay) elements.loadingOverlay.classList.add('hidden');
-}
-
-/**
- * Set Default Query Date Inputs
- */
-function setDefaultQueryDates() {
-    const now = new Date();
-    const past = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
-
-    const toLocalISO = (d) => {
-        const pad = n => n < 10 ? '0' + n : n;
-        return d.getFullYear() + '-' +
-            pad(d.getMonth() + 1) + '-' +
-            pad(d.getDate()) + 'T' +
-            pad(d.getHours()) + ':' +
-            pad(d.getMinutes());
-    };
-
-    if (elements.queryStart) elements.queryStart.value = toLocalISO(past);
-    if (elements.queryEnd) elements.queryEnd.value = toLocalISO(now);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

@@ -1,4 +1,4 @@
-/**
+/*
  * Fenwick Tree (Binary Indexed Tree) implementation for efficient range sum queries and measuring updates.
  *
  * Time Complexities:

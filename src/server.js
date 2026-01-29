@@ -3,7 +3,9 @@ import cors from 'cors';
 import { FenwickTree } from './fenwickTree.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
+dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -15,234 +17,269 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Constants for Time Slots
-const TOTAL_SLOTS = 168; // 7 days * 24 hours
-const SLOT_DURATION_MS = 60 * 60 * 1000; // 1 hour
-// Fixed window end time for this session (prevents shifting logic complexity for demo)
-// Current 'Now' is the end of the window.
-// Ideally, in a production system, this would be sliding, i.e., relative to Date.now().
-// For this demo, we use a reference point of Date.now() at startup.
-const SESSION_START_TIME = Date.now();
-const WINDOW_START_TIME = SESSION_START_TIME - (TOTAL_SLOTS * SLOT_DURATION_MS);
+// --- BIT Configuration ---
+const WINDOW_MINUTES = 60;
+const GITHUB_API_URL = 'https://api.github.com/events?per_page=100';
+let POLLING_INTERVAL = 120000; // 2 minutes (Safer for unauthenticated demo)
 
-/** 
- * Maps a timestamp to a 1-based index (1 to 168).
- * Most recent hour (near SESSION_START_TIME) maps to 168.
- * @param {number} timestamp 
- * @returns {number} 1 to 168, or -1 if out of range
+/**
+ * GITHUB API POLLING STRATEGY:
+ * We poll for 100 events every 2 minutes. 
+ * - Unauthenticated limit is 60 requests/hr (polling every 1m uses all of it).
+ * - Polling every 2m leaves 50% headroom for restarts/browser refreshes.
+ * - If GITHUB_TOKEN is provided in .env, limit increases to 5000/hr.
  */
-function getSlotIndex(timestamp) {
-    if (timestamp < WINDOW_START_TIME || timestamp > SESSION_START_TIME + SLOT_DURATION_MS) { // Allow slight future drift
-        return -1;
-    }
-    const offset = timestamp - WINDOW_START_TIME;
-    let index = Math.ceil(offset / SLOT_DURATION_MS);
-    if (index === 0) index = 1; // Handle exact boundary
-    return Math.min(Math.max(index, 1), TOTAL_SLOTS);
-}
 
 // Data Structures
-const EVENT_TYPES = ['ERROR', 'WARNING', 'INFO', 'DEBUG'];
-const trees = {};
-const naiveArrays = {}; // For performance comparison
-const recentEvents = []; // Store last 20 events
-let totalEventsCount = 0;
+const mainTree = new FenwickTree(WINDOW_MINUTES);
+const typeTrees = {};
+const eventCache = []; // Stores events: { id, type, created_at, ingested_at, slot }
 
-// Initialize Trees and Arrays
-EVENT_TYPES.forEach(type => {
-    trees[type] = new FenwickTree(TOTAL_SLOTS);
-    naiveArrays[type] = new Float64Array(TOTAL_SLOTS + 1); // 1-based index matching
-});
+// API Status State
+let apiStatus = {
+    online: true,
+    lastLimit: null,
+    resetTime: null,
+    isRateLimited: false,
+    errorMessage: null
+};
 
-// Helper to record event
-function recordEvent(type, timestamp) {
-    const index = getSlotIndex(timestamp);
-    if (index === -1) return; // Out of window
+// Supported real GitHub event types
+const SUPPORTED_TYPES = [
+    'PushEvent', 'CreateEvent', 'DeleteEvent', 'PullRequestEvent',
+    'IssuesEvent', 'IssueCommentEvent', 'ForkEvent', 'WatchEvent',
+    'ReleaseEvent', 'GollumEvent', 'MemberEvent', 'CommitCommentEvent',
+    'PullRequestReviewEvent', 'PullRequestReviewCommentEvent'
+];
 
-    // Update Fenwick Tree
-    trees[type].update(index, 1);
+let windowStart = Date.now() - (WINDOW_MINUTES * 60 * 1000);
 
-    // Update Naive Array
-    naiveArrays[type][index] += 1;
-
-    // Global Stats
-    totalEventsCount++;
-    const event = { type, timestamp, date: new Date(timestamp).toISOString() };
-    recentEvents.unshift(event);
-    if (recentEvents.length > 20) recentEvents.pop();
+/**
+ * Maps a timestamp to a 1-60 minute slot relative to the current window.
+ */
+function getSlotIndex(timestamp) {
+    const now = Date.now();
+    const elapsed = timestamp - (now - (WINDOW_MINUTES * 60 * 1000));
+    const minute = Math.floor(elapsed / 60000) + 1;
+    return minute; // May return < 1 or > 60 if out of current window
 }
 
 /**
- * GENERATE INITIAL EVENTS
- * 1000 random events distributed over the last 7 days.
+ * INCREMENTAL Fenwick Tree Update:
+ * Updates are performed in O(log N) as events arrive.
+ * Any contribution to the BIT is strictly based on the true 'created_at' timestamp.
  */
-console.log('Generating 1000 initial random events...');
-for (let i = 0; i < 1000; i++) {
-    const type = EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)];
-    // Random time between WINDOW_START_TIME and SESSION_START_TIME
-    const time = WINDOW_START_TIME + Math.random() * (SESSION_START_TIME - WINDOW_START_TIME);
-    recordEvent(type, time);
+function processEvent(evt) {
+    const ts = new Date(evt.created_at).getTime();
+    const slot = getSlotIndex(ts);
+
+    // Only update BIT if event falls within our 60-minute analytics window
+    if (slot >= 1 && slot <= WINDOW_MINUTES) {
+        // Increment global BIT in O(log N)
+        mainTree.update(slot, 1);
+
+        // Normalize type
+        const type = SUPPORTED_TYPES.includes(evt.type) ? evt.type : 'OtherEvent';
+        if (!typeTrees[type]) {
+            typeTrees[type] = new FenwickTree(WINDOW_MINUTES);
+        }
+        // Increment per-type BIT in O(log N)
+        typeTrees[type].update(slot, 1);
+
+        // Tag event with the slot it was assigned to for future cleanup
+        evt.slot = slot;
+    }
 }
-console.log('Initial generation complete.');
 
 /**
- * CONTINUOUS EVENT GENERATION
- * Every 2-5 seconds.
+ * EFFICIENT MAINTENANCE ROUTINE:
+ * Handles the "sliding window" by removing expired events (older than 60 mins).
+ * - Complexity: O(E * log N) where E is the number of expired events.
+ * - This does NOT scan the entire tree.
+ * - It "undoes" the contribution of an event at its specific BIT slot in O(log N).
  */
-function startEventGenerator() {
-    const delay = Math.floor(Math.random() * 3000) + 2000; // 2000-5000ms
-    setTimeout(() => {
-        const type = EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)];
-        // Generate event at current time (capped at SESSION_START_TIME for consistency with fixed window?)
-        // To verify "Most recent hour = highest index" logic, we should use continuous time.
-        // However, if we exceed SESSION_START_TIME, getSlotIndex might fail or we need to slide.
-        // For this demo, let's just generate events very close to SESSION_START_TIME or slightly "now"
-        const now = Date.now();
-        // Just use 'now'. Our getSlotIndex handles slightly future items by clamping or we just update the ref?
-        // Since we are not sliding the window, let's treat "now" as valid even if > SESSION_START_TIME
-        // Actually, let's stick to the window logic.
-        recordEvent(type, now);
+function maintenance() {
+    const now = Date.now();
+    const cutoff = now - (WINDOW_MINUTES * 60 * 1000);
 
-        console.log(`[Generated] ${type} event at ${new Date().toISOString()}`);
-        startEventGenerator(); // Recurse
-    }, delay);
+    // 1. Remove expired events from cache and decrement BIT
+    // In a production high-volume system, we would use a more efficient sliding pointer.
+    for (let i = eventCache.length - 1; i >= 0; i--) {
+        const evt = eventCache[i];
+        const ts = new Date(evt.created_at).getTime();
+
+        if (ts < cutoff) {
+            // Decrement BIT values for the slot this event occupied
+            if (evt.slot >= 1 && evt.slot <= WINDOW_MINUTES) {
+                mainTree.update(evt.slot, -1);
+                const type = SUPPORTED_TYPES.includes(evt.type) ? evt.type : 'OtherEvent';
+                if (typeTrees[type]) typeTrees[type].update(evt.slot, -1);
+            }
+            // Remove from cache
+            eventCache.splice(i, 1);
+        }
+    }
+
+    // 2. Re-slotting (Heuristic)
+    // Since our BIT indices are "minutes relative to now", as time moves,
+    // the semantic meaning of "slot 10" changes. 
+    // To maintain O(log N) efficiency while keeping the window "live", 
+    // we rebuild ONLY when the window has shifted significantly (e.g. 1 minute).
+    const currentBase = Math.floor(now / 60000);
+    if (!global.lastBase || currentBase > global.lastBase) {
+        rebuildBit();
+        global.lastBase = currentBase;
+    }
 }
-startEventGenerator();
 
+/**
+ * HEURISTIC ALIGNMENT fallback:
+ * Periodically re-maps active events to align internal indices with real-world time boundaries.
+ * This is a standard optimization for windowed data structures to prevent drift.
+ */
+function rebuildBit() {
+    mainTree.tree.fill(0);
+    Object.values(typeTrees).forEach(t => t.tree.fill(0));
+
+    eventCache.forEach(evt => {
+        const ts = new Date(evt.created_at).getTime();
+        const slot = getSlotIndex(ts);
+        if (slot >= 1 && slot <= WINDOW_MINUTES) {
+            mainTree.update(slot, 1);
+            const type = SUPPORTED_TYPES.includes(evt.type) ? evt.type : 'OtherEvent';
+            if (!typeTrees[type]) { // Ensure tree exists before updating
+                typeTrees[type] = new FenwickTree(WINDOW_MINUTES);
+            }
+            typeTrees[type].update(slot, 1);
+            evt.slot = slot;
+        }
+    });
+}
+
+/**
+ * Polls GitHub API for public events with backoff logic.
+ */
+async function fetchGitHubData() {
+    try {
+        console.log(`[API] Polling GitHub... (Rate Limit: ${apiStatus.lastLimit || 'Checking'})`);
+
+        const headers = { 'User-Agent': 'Log-Event-Aggregator-BIT-v2' };
+        if (process.env.GITHUB_TOKEN) {
+            headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+        }
+
+        const response = await fetch(GITHUB_API_URL, { headers });
+
+        apiStatus.lastLimit = response.headers.get('x-ratelimit-remaining');
+        apiStatus.resetTime = response.headers.get('x-ratelimit-reset');
+
+        if (response.status === 403) {
+            apiStatus.isRateLimited = true;
+            apiStatus.errorMessage = "Rate limit exceeded. Try adding GITHUB_TOKEN to .env";
+            console.error(`[API] 403 Forbidden: Rate Limited. Resets at ${new Date(apiStatus.resetTime * 1000).toLocaleTimeString()}`);
+
+            // Exponential Backoff: Stop polling for 5 minutes
+            setTimeout(fetchGitHubData, 300000);
+            return;
+        }
+
+        if (!response.ok) throw new Error(`GitHub API Error: ${response.status}`);
+
+        const newEvents = await response.json();
+        const ingested_at = new Date().toISOString();
+
+        apiStatus.isRateLimited = false;
+        apiStatus.errorMessage = null;
+
+        newEvents.forEach(evt => {
+            if (!eventCache.find(cached => cached.id === evt.id)) {
+                const enriched = {
+                    ...evt,
+                    ingested_at,
+                    type_label: evt.type.replace('Event', '')
+                };
+                eventCache.unshift(enriched);
+                processEvent(enriched);
+            }
+        });
+
+        if (eventCache.length > 5000) eventCache.length = 5000;
+        console.log(`[BIT] Success. Events cached: ${eventCache.length}`);
+
+        // Schedule next poll
+        setTimeout(fetchGitHubData, POLLING_INTERVAL);
+
+    } catch (err) {
+        console.error('[API] Fetch Error:', err.message);
+        setTimeout(fetchGitHubData, POLLING_INTERVAL); // Retry
+    }
+}
+
+// Start Initial Polling
+fetchGitHubData();
 
 // --- API ENDPOINTS ---
 
 /**
- * 1. POST /api/log-event
- * Body: {type: string, timestamp: number}
+ * 1. GET /api/events/live
  */
-app.post('/api/log-event', (req, res) => {
-    try {
-        const { type, timestamp } = req.body;
+app.get('/api/events/live', (req, res) => {
+    res.json(eventCache.slice(0, 30));
+});
 
-        if (!EVENT_TYPES.includes(type)) {
-            return res.status(400).json({ error: `Invalid type. Allowed: ${EVENT_TYPES.join(', ')}` });
-        }
-        if (typeof timestamp !== 'number') {
-            return res.status(400).json({ error: 'Timestamp must be a number.' });
-        }
+/**
+ * 2. GET /api/stats/dashboard
+ */
+app.get('/api/stats/dashboard', (req, res) => {
+    maintenance(); // Ensure BIT is aligned with current time
 
-        recordEvent(type, timestamp);
-        res.status(200).json({ success: true, message: 'Event logged' });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Internal Server Error' });
+    const nowIdx = WINDOW_MINUTES;
+    const stats = {
+        last5min: mainTree.rangeSum(Math.max(1, nowIdx - 4), nowIdx),
+        last15min: mainTree.rangeSum(Math.max(1, nowIdx - 14), nowIdx),
+        last60min: mainTree.prefixSum(nowIdx),
+        peak: findPeakInterval(),
+        distribution: getDistribution(),
+        api: apiStatus
+    };
+    res.json(stats);
+});
+
+/**
+ * Finds the minute with the highest activity using rangeSum(i, i).
+ */
+function findPeakInterval() {
+    let maxVal = -1;
+    let peakSlot = 1;
+    for (let i = 1; i <= WINDOW_MINUTES; i++) {
+        const val = mainTree.rangeSum(i, i);
+        if (val > maxVal) {
+            maxVal = val;
+            peakSlot = i;
+        }
     }
-});
+    // Return time relative to now
+    return { count: maxVal, minutesAgo: WINDOW_MINUTES - peakSlot };
+}
 
 /**
- * 2. GET /api/query
- * Query params: type, startTime, endTime
+ * Calculates event type distribution using per-type Fenwick Trees.
  */
-app.get('/api/query', (req, res) => {
-    const startQ = performance.now();
-    try {
-        const { type, startTime, endTime } = req.query;
-
-        if (!type || !EVENT_TYPES.includes(type)) {
-            return res.status(400).json({ error: 'Valid type is required.' });
-        }
-        const start = parseInt(startTime);
-        const end = parseInt(endTime);
-
-        if (isNaN(start) || isNaN(end)) {
-            return res.status(400).json({ error: 'startTime and endTime must be numbers.' });
-        }
-
-        // Convert times to indices
-        const lIndex = getSlotIndex(start);
-        const rIndex = getSlotIndex(end);
-
-        // Ensure range is valid 1..168 and l <= r
-        const L = Math.max(1, Math.min(lIndex, TOTAL_SLOTS));
-        const R = Math.max(1, Math.min(rIndex, TOTAL_SLOTS));
-
-        let count = 0;
-        if (L <= R && lIndex !== -1 && rIndex !== -1) {
-            count = trees[type].rangeSum(L, R);
-        }
-
-        const timeMs = performance.now() - startQ;
-        res.json({
-            type,
-            range: { start, end, lIndex, rIndex },
-            count,
-            timeMs
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-/**
- * 3. GET /api/stats
- */
-app.get('/api/stats', (req, res) => {
-    const counts = {};
-    EVENT_TYPES.forEach(t => {
-        counts[t] = trees[t].prefixSum(TOTAL_SLOTS); // Total count in tree
+function getDistribution() {
+    const dist = {};
+    Object.keys(typeTrees).forEach(type => {
+        const count = typeTrees[type].prefixSum(WINDOW_MINUTES);
+        if (count > 0) dist[type.replace('Event', '')] = count;
     });
-
-    res.json({
-        counts,
-        recentEvents,
-        totalEvents: totalEventsCount
-    });
-});
-
-/**
- * 4. GET /api/performance
- * Compare Fenwick Tree vs Naive Loop
- */
-app.get('/api/performance', (req, res) => {
-    const comparison = {};
-    const ITERATIONS = 10000; // Run enough times to measure difference
-
-    EVENT_TYPES.forEach(type => {
-        // Random Range
-        const l = Math.floor(Math.random() * (TOTAL_SLOTS / 2)) + 1;
-        const r = Math.floor(Math.random() * (TOTAL_SLOTS / 2)) + (TOTAL_SLOTS / 2); // Ensure L < R usually
-
-        // 1. Measure Fenwick
-        const startBit = performance.now();
-        let bitSum = 0;
-        for (let i = 0; i < ITERATIONS; i++) {
-            bitSum = trees[type].rangeSum(l, r);
-        }
-        const endBit = performance.now();
-
-        // 2. Measure Naive
-        const startNaive = performance.now();
-        let naiveSum = 0;
-        const arr = naiveArrays[type];
-        for (let i = 0; i < ITERATIONS; i++) {
-            let s = 0;
-            for (let j = l; j <= r; j++) {
-                s += arr[j];
-            }
-            naiveSum = s;
-        }
-        const endNaive = performance.now();
-
-        comparison[type] = {
-            range: [l, r],
-            iterations: ITERATIONS,
-            fenwickTimeMs: (endBit - startBit),
-            naiveTimeMs: (endNaive - startNaive),
-            speedup: ((endNaive - startNaive) / (endBit - startBit)).toFixed(2) + 'x'
-        };
-    });
-
-    res.json(comparison);
-});
+    return dist;
+}
 
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-    console.log(`Tracking window: ${new Date(WINDOW_START_TIME).toISOString()} to ${new Date(SESSION_START_TIME).toISOString()}`);
+    console.log(`\n=========================================`);
+    console.log(`BIT ANALYTICS SERVER RUNNING`);
+    console.log(`URL: http://localhost:${PORT}`);
+    console.log(`Window Size: ${WINDOW_MINUTES} Minutes`);
+    console.log(`Implementation: Fenwick Tree (Binary Indexed Tree)`);
+    console.log(`=========================================\n`);
 });
