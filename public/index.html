@@ -27,6 +27,12 @@
                 <li id="tab-link-dashboard" class="nav-item active" data-tab="dashboard">
                     <i class="fas fa-chart-line"></i> Dashboard
                 </li>
+                <li id="tab-link-repos" class="nav-item" data-tab="repos">
+                    <i class="fas fa-trophy"></i> Top Repos
+                </li>
+                <li id="tab-link-explorer" class="nav-item" data-tab="explorer">
+                    <i class="fas fa-microchip"></i> BIT Explorer
+                </li>
                 <li id="tab-link-about" class="nav-item" data-tab="about">
                     <i class="fas fa-info-circle"></i> About
                 </li>
@@ -42,9 +48,8 @@
             <div class="container">
                 <h1>Advanced GitHub Analytics</h1>
                 <p class="subtitle">Real-time stats powered by <strong>Fenwick Tree (BIT)</strong></p>
-                <p class="disclaimer"><i class="fas fa-info-circle"></i> Events reflect real GitHub activity and may
-                    appear
-                    with short delays due to API behavior.</p>
+                <p class="disclaimer"><i class="fas fa-info-circle"></i> GitHub API has a built-in 5-minute delay.
+                    Events appearing "now" are actually from ~5 mins ago.</p>
             </div>
         </header>
 
@@ -56,8 +61,8 @@
                     <div class="card info">
                         <div class="icon"><i class="fas fa-clock"></i></div>
                         <div class="details">
-                            <h3>Last 5 Mins</h3>
-                            <span class="count" id="stat-5min">0</span>
+                            <h3>Last 10 Mins</h3>
+                            <span class="count" id="stat-10min">0</span>
                         </div>
                     </div>
                     <div class="card warning">
@@ -125,7 +130,52 @@
         </main>
     </div>
 
+    <div id="tab-repos" class="tab-pane">
+        <header>
+            <div class="container">
+                <h1>Repository Leaderboard</h1>
+                <p class="subtitle">Trending repositories in the current analytics window</p>
+            </div>
+        </header>
+        <main class="container">
+            <section class="panel full-width">
+                <h2 class="panel-title"><i class="fas fa-star"></i> Most Active Repositories</h2>
+                <div id="repo-leaderboard" class="repo-grid">
+                    <!-- Repo cards injected here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="tab-explorer" class="tab-pane">
+        <header>
+            <div class="container">
+                <h1>BIT Explorer</h1>
+                <p class="subtitle">Inside the Fenwick Tree's internal memory state</p>
+            </div>
+        </header>
+        <main class="container">
+            <div class="explorer-grid">
+                <section class="panel">
+                    <h2 class="panel-title"><i class="fas fa-sitemap"></i> Tree Structure Visualization</h2>
+                    <p class="description">This shows how values are stored in the BIT's internal array (1-indexed).
+                        Each node represents a partial sum.</p>
+                    <div id="bit-visualizer" class="bit-viz">
+                        <!-- BIT nodes injected here -->
+                    </div>
+                </section>
+                <section class="panel">
+                    <h2 class="panel-title"><i class="fas fa-terminal"></i> Live Trace</h2>
+                    <div class="trace-container">
+                        <pre id="bit-trace">Waiting for update...</pre>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
     <div id="tab-about" class="tab-pane">
+
         <header>
             <div class="container">
                 <h1>About the Project</h1>

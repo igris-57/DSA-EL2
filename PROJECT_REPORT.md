@@ -62,5 +62,10 @@ GitHub limits unauthenticated users to 60 hits per hour. We implemented:
 - **Token Integration**: Users can add a `GITHUB_TOKEN` to jump from 60 to 5,000 requests/hour.
 - **Visual Feedback**: The UI changes state (Red disclaimer) to alert the user if they are currently rate-limited.
 
-## 7. Conclusion
-This project successfully applies a complex data structure (Fenwick Tree) to a real-world scenario. It demonstrates that advanced algorithms aren't just for whiteboard interviews—they are essential for building responsive, high-traffic systems in the real world.
+## 7. Advanced Features
+- **Hourly Persistence**: A separate Fenwick Tree with 24 slots provides a high-level view of activity throughout the day, showcasing the versatility of BIT in handling multiple granularities.
+- **Repository Metadata**: The system builds a frequency map of active repositories, demonstrating how BIT-derived totals can be augmented with relational metadata.
+- **Internal State Inspection**: The "BIT Explorer" provides a direct mapping of the internal array, allowing users to see how index `i` stores a sum that covers a range determined by its Least Significant Bit.
+
+## 8. Conclusion
+This project successfully applies a complex data structure (Fenwick Tree) to a real-world scenario. It demonstrate that advanced algorithms aren't just for whiteboard interviews—they are essential for building responsive, high-traffic systems in the real world.

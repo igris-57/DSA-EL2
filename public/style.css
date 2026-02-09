@@ -702,3 +702,115 @@ footer {
 .full-width {
     grid-column: 1 / -1;
 }
+
+/* Repo Leaderboard */
+.repo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.repo-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.2s;
+}
+
+.repo-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--color-accent);
+    transform: translateX(5px);
+}
+
+.repo-info h4 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+}
+
+.repo-info p {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.repo-stat {
+    background: var(--color-accent);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+/* BIT Explorer */
+.explorer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 2rem;
+}
+
+.bit-viz {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+    gap: 0.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 1.5rem;
+    border-radius: 12px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.bit-node {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.5rem;
+    text-align: center;
+    font-family: 'Consolas', monospace;
+    font-size: 0.75rem;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.bit-node.active {
+    background: var(--color-accent);
+    color: white;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+}
+
+.bit-node .idx {
+    opacity: 0.5;
+    font-size: 0.65rem;
+}
+
+.trace-container {
+    background: #000;
+    color: #0f0;
+    padding: 1.5rem;
+    border-radius: 12px;
+    font-family: 'Consolas', monospace;
+    font-size: 0.85rem;
+    height: 100%;
+    border: 1px solid #030;
+    overflow-y: auto;
+    max-height: 500px;
+}
+
+#bit-trace {
+    white-space: pre-wrap;
+    line-height: 1.6;
+}
+
+@media (max-width: 1000px) {
+    .explorer-grid {
+        grid-template-columns: 1fr;
+    }
+}

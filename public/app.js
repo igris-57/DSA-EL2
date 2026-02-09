@@ -11,66 +11,62 @@ const state = {
     stats: null,
     liveEvents: [],
     chart: null,
-    isFetching: false
+    isFetching: false,
+    bitTrace: []
 };
 
 // --- DOM Elements ---
 const elements = {
     stats: {
-        '5min': document.getElementById('stat-5min'),
+        '10min': document.getElementById('stat-10min'),
         '15min': document.getElementById('stat-15min'),
         '60min': document.getElementById('stat-60min'),
         'peak': document.getElementById('stat-peak'),
         'peakTime': document.getElementById('peak-time')
     },
     eventList: document.getElementById('event-list'),
-    chartCanvas: document.getElementById('distribution-chart')
+    chartCanvas: document.getElementById('distribution-chart'),
+    repoLeaderboard: document.getElementById('repo-leaderboard'),
+    bitVisualizer: document.getElementById('bit-visualizer'),
+    bitTrace: document.getElementById('bit-trace')
 };
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     initTabs();
-    initChart();
+    initCharts();
     updateDashboard();
     setInterval(updateDashboard, REFRESH_INTERVAL);
 });
 
 /**
- * 1. Theme Management (Dark/Light Mode)
+ * 1. Theme Management
  */
 function initTheme() {
     const savedTheme = localStorage.getItem('theme') || 'dark';
-    if (savedTheme === 'light') {
-        document.body.classList.add('light-theme');
-    }
+    if (savedTheme === 'light') document.body.classList.add('light-theme');
     updateThemeIcon(savedTheme);
 
-    const toggleBtn = document.getElementById('theme-toggle');
-    if (toggleBtn) {
-        toggleBtn.addEventListener('click', () => {
-            const isLight = document.body.classList.toggle('light-theme');
-            const newTheme = isLight ? 'light' : 'dark';
-            localStorage.setItem('theme', newTheme);
-            updateThemeIcon(newTheme);
-            updateChartTheme(newTheme);
-        });
-    }
+    document.getElementById('theme-toggle')?.addEventListener('click', () => {
+        const isLight = document.body.classList.toggle('light-theme');
+        const theme = isLight ? 'light' : 'dark';
+        localStorage.setItem('theme', theme);
+        updateThemeIcon(theme);
+        updateChartsTheme(theme);
+    });
 }
 
 function updateThemeIcon(theme) {
     const icon = document.getElementById('theme-icon');
-    if (icon) {
-        icon.className = theme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
-    }
+    if (icon) icon.className = theme === 'light' ? 'fas fa-sun' : 'fas fa-moon';
 }
 
 /**
  * 2. Tab Management
  */
 function initTabs() {
-    const tabLinks = document.querySelectorAll('.nav-item');
-    tabLinks.forEach(link => {
+    document.querySelectorAll('.nav-item').forEach(link => {
         link.addEventListener('click', () => {
             const tabId = link.getAttribute('data-tab');
             switchTab(tabId);
@@ -79,188 +75,167 @@ function initTabs() {
 }
 
 function switchTab(tabId) {
-    // Update Nav
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
     document.getElementById(`tab-link-${tabId}`).classList.add('active');
-
-    // Update Content
     document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
     document.getElementById(`tab-${tabId}`).classList.add('active');
 }
 
 /**
- * 3. Initialize Chart.js
+ * 3. Charts Initialization
  */
-function initChart() {
-    if (!elements.chartCanvas) return;
-
+function initCharts() {
     const theme = localStorage.getItem('theme') || 'dark';
     const textColor = theme === 'light' ? '#64748b' : '#9ca3af';
     const gridColor = theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
 
-    state.chart = new Chart(elements.chartCanvas, {
-        type: 'bar',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Event Count (Last Hour)',
-                data: [],
-                backgroundColor: 'rgba(139, 92, 246, 0.4)',
-                borderColor: 'rgba(139, 92, 246, 1)',
-                borderWidth: 1,
-                borderRadius: 4
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: { color: gridColor },
-                    ticks: { color: textColor }
-                },
-                x: {
-                    grid: { display: false },
-                    ticks: { color: textColor }
-                }
-            },
-            plugins: {
-                legend: { display: false }
-            }
-        }
-    });
+    // Distribution Chart
+    if (elements.chartCanvas) {
+        state.chart = new Chart(elements.chartCanvas, {
+            type: 'bar',
+            data: { labels: [], datasets: [{ label: 'Events', data: [], backgroundColor: 'rgba(139, 92, 246, 0.4)', borderColor: 'rgba(139, 92, 246, 1)', borderWidth: 1 }] },
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: gridColor }, ticks: { color: textColor } }, x: { grid: { display: false }, ticks: { color: textColor } } }, plugins: { legend: { display: false } } }
+        });
+    }
 }
 
-function updateChartTheme(theme) {
-    if (!state.chart) return;
+function updateChartsTheme(theme) {
     const textColor = theme === 'light' ? '#64748b' : '#9ca3af';
     const gridColor = theme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
-
-    state.chart.options.scales.y.ticks.color = textColor;
-    state.chart.options.scales.y.grid.color = gridColor;
-    state.chart.options.scales.x.ticks.color = textColor;
-    state.chart.update();
+    if (state.chart) {
+        state.chart.options.scales.y.ticks.color = textColor;
+        state.chart.options.scales.y.grid.color = gridColor;
+        state.chart.options.scales.x.ticks.color = textColor;
+        state.chart.update();
+    }
 }
 
 /**
- * 2. Update Dashboard - Fetch from Backend
+ * 4. Data Updates
  */
 async function updateDashboard() {
     if (state.isFetching) return;
     state.isFetching = true;
 
     try {
-        // Fetch Live Stream
-        const streamRes = await fetch(`${API_BASE}/events/live`);
-        const liveEvents = await streamRes.json();
-        renderStream(liveEvents);
+        const [liveRes, statsRes, extendedRes] = await Promise.all([
+            fetch(`${API_BASE}/events/live`),
+            fetch(`${API_BASE}/stats/dashboard`),
+            fetch(`${API_BASE}/stats/extended`)
+        ]);
 
-        // Fetch BIT Analytics
-        const statsRes = await fetch(`${API_BASE}/stats/dashboard`);
+        const liveEvents = await liveRes.json();
         const stats = await statsRes.json();
+        const extended = await extendedRes.json();
+
+        renderStream(liveEvents);
         renderStats(stats);
-        updateChart(stats.distribution);
+        renderExtended(extended);
+        updateDistributionChart(stats.distribution);
 
     } catch (err) {
-        console.error('Failed to update dashboard:', err);
+        console.error('Update failed:', err);
     } finally {
         state.isFetching = false;
     }
 }
 
-/**
- * 3. Render BIT Stats
- */
 function renderStats(stats) {
-    if (elements.stats['5min']) elements.stats['5min'].textContent = stats.last5min;
+    if (elements.stats['10min']) elements.stats['10min'].textContent = stats.last10min;
     if (elements.stats['15min']) elements.stats['15min'].textContent = stats.last15min;
     if (elements.stats['60min']) elements.stats['60min'].textContent = stats.last60min;
+    if (elements.stats['peak']) elements.stats['peak'].textContent = stats.peak.count;
+    if (elements.stats['peakTime']) elements.stats['peakTime'].textContent = `${stats.peak.minutesAgo} mins ago`;
 
-    if (elements.stats['peak']) {
-        elements.stats['peak'].textContent = stats.peak.count;
-    }
-    if (elements.stats['peakTime']) {
-        elements.stats['peakTime'].textContent = `${stats.peak.minutesAgo} mins ago`;
-    }
-
-    // Handle Rate Limit Notice
+    // Rate limit handling
     const disclaimer = document.querySelector('.disclaimer');
     if (disclaimer && stats.api) {
         if (stats.api.isRateLimited) {
-            const resetTime = new Date(stats.api.resetTime * 1000).toLocaleTimeString();
             disclaimer.style.color = 'var(--color-error)';
-            disclaimer.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Rate Limited. Resets at ${resetTime}. Add GITHUB_TOKEN to .env to fix.`;
+            disclaimer.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Rate Limited. Try again later or add token.`;
         } else {
-            disclaimer.style.color = ''; // Reset
-            disclaimer.innerHTML = `<i class="fas fa-info-circle"></i> Events reflect real GitHub activity and may appear with short delays due to API behavior.`;
+            disclaimer.style.color = '';
+            disclaimer.innerHTML = `<i class="fas fa-info-circle"></i> Live GitHub analytics via Fenwick Tree.`;
         }
     }
 }
 
-/**
- * 4. Update Distribution Chart
- */
-function updateChart(distribution) {
+function renderExtended(data) {
+    // 1. Repo Leaderboard
+    if (elements.repoLeaderboard) {
+        elements.repoLeaderboard.innerHTML = data.topRepos.map(repo => `
+            <div class="repo-card">
+                <div class="repo-info">
+                    <h4>${repo.name}</h4>
+                    <p>High activity repo</p>
+                </div>
+                <div class="repo-stat">${repo.count} evts</div>
+            </div>
+        `).join('');
+    }
+
+    // 3. BIT Visualizer
+    if (elements.bitVisualizer) {
+        const tree = data.bitStructure.main;
+        elements.bitVisualizer.innerHTML = tree.map((val, i) => i === 0 ? '' : `
+            <div class="bit-node ${val > 0 ? 'active' : ''}" title="Index ${i}: ${val}">
+                <span class="idx">${i}</span>
+                <span class="val">${val}</span>
+            </div>
+        `).join('');
+    }
+
+    // 3. Trace Log
+    if (elements.bitTrace) {
+        const totalEvents = data.bitStructure.main.reduce((a, b) => a + b, 0);
+        const activeSlots = data.bitStructure.main.filter(v => v > 0).length;
+        const log = `[${new Date().toLocaleTimeString()}] BIT Status
+────────────────────────────────
+Total Events in Window: ${totalEvents}
+Active Slots: ${activeSlots} / ${data.bitStructure.size}
+Tree Array Size: ${data.bitStructure.main.length}
+
+Fenwick Tree uses 1-based indexing.
+Index 0 is unused (always 0).
+Each slot represents 1 minute of data.`;
+        elements.bitTrace.textContent = log;
+    }
+}
+
+function updateDistributionChart(dist) {
     if (!state.chart) return;
-
-    const labels = Object.keys(distribution);
-    const data = Object.values(distribution);
-
-    state.chart.data.labels = labels;
-    state.chart.data.datasets[0].data = data;
+    state.chart.data.labels = Object.keys(dist);
+    state.chart.data.datasets[0].data = Object.values(dist);
     state.chart.update();
 }
 
-/**
- * 5. Render Live Stream
- */
 function renderStream(events) {
-    const list = elements.eventList;
-    if (!list) return;
-
-    list.innerHTML = '';
-
+    if (!elements.eventList) return;
     if (events.length === 0) {
-        list.innerHTML = `<li class="event-item" style="justify-content: center; opacity: 0.5;">Waiting for GitHub events...</li>`;
+        elements.eventList.innerHTML = `<li style="text-align:center; padding:2rem; opacity:0.5;">Awaiting data...</li>`;
         return;
     }
 
-    events.forEach(evt => {
-        const li = document.createElement('li');
-        li.className = 'event-item';
-
+    elements.eventList.innerHTML = events.map(evt => {
         const type = evt.type.replace('Event', '');
-        const createdTime = formatRelativeTime(new Date(evt.created_at));
-        const ingestedTime = new Date(evt.ingested_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-        li.innerHTML = `
-            <div style="display:flex; flex-direction:column; gap: 0.25rem; flex: 1;">
-                <div style="display:flex; align-items:center; gap: 1rem;">
-                    <span class="badge ${type}">${type}</span>
-                    <span style="font-size: 0.85rem; color: var(--text-primary);">
-                        <strong>${evt.actor.display_login}</strong> at <i>${evt.repo.name}</i>
-                    </span>
+        return `
+            <li class="event-item">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="badge ${type}">${type}</span>
+                        <span style="font-weight:600; font-size:0.85rem;">${evt.actor.login}</span>
+                    </div>
+                    <div style="font-size:0.75rem; opacity:0.6; margin-left: 148px;">${evt.repo.name}</div>
                 </div>
-                <div style="font-size: 0.7rem; color: var(--text-secondary); margin-left: 115px; opacity: 0.6;">
-                    Event Time (GitHub): ${createdTime} | Received by Server: ${ingestedTime}
-                </div>
-            </div>
-            <span class="time">${createdTime}</span>
+                <span class="time">${formatRelativeTime(new Date(evt.created_at))}</span>
+            </li>
         `;
-        list.appendChild(li);
-    });
+    }).join('');
 }
 
-/**
- * Helper: Format Relative Time
- */
 function formatRelativeTime(date) {
-    const now = new Date();
-    const diffSec = Math.floor((now - date) / 1000);
-
-    if (diffSec < 60) return 'Just now';
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
+    const diff = Math.floor((new Date() - date) / 1000);
+    if (diff < 60) return 'now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

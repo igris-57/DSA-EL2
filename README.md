@@ -8,7 +8,9 @@ To showcase the application of a **Fenwick Tree (Binary Indexed Tree)** for high
 ## Key Features
 - **Incremental Data Ingestion**: Polls GitHub Public Events API for 100 events every 2 minutes, mapping them to true activity timestamps.
 - **BIT-Powered Analytics**: Uses multiple Fenwick Trees to compute activity for 5m, 15m, and 60m windows in **O(log N)** time.
-- **Efficient Maintenance**: Implements a sliding-window routine that decrements aged-out events in logarithmic time per event.
+- **Hourly Trends (24h)**: A secondary BIT architecture tracks global activity distribution across a full day.
+- **Repository Leaderboard**: Real-time identification of high-traffic repositories within the analytics window.
+- **BIT Explorer**: An interactive visualization table showing the internal memory state (partial sums) of the Fenwick Tree array.
 - **Rate Limit Resilience**: Implements exponential backoff and `GITHUB_TOKEN` support to handle API quotas gracefully.
 
 ## Handling API Rate Limits

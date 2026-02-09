@@ -33,6 +33,7 @@ let POLLING_INTERVAL = 120000; // 2 minutes (Safer for unauthenticated demo)
 // Data Structures
 const mainTree = new FenwickTree(WINDOW_MINUTES);
 const typeTrees = {};
+const repoStats = {}; // { repoName: { count: x, lastUpdate: ts } }
 const eventCache = []; // Stores events: { id, type, created_at, ingested_at, slot }
 
 // API Status State
@@ -88,6 +89,11 @@ function processEvent(evt) {
 
         // Tag event with the slot it was assigned to for future cleanup
         evt.slot = slot;
+
+        // Repo tracking
+        const repoName = evt.repo.name;
+        if (!repoStats[repoName]) repoStats[repoName] = 0;
+        repoStats[repoName]++;
     }
 }
 
@@ -153,6 +159,14 @@ function rebuildBit() {
             typeTrees[type].update(slot, 1);
             evt.slot = slot;
         }
+    });
+
+    // Reset repo stats on rebuild to keep it fresh
+    Object.keys(repoStats).forEach(k => delete repoStats[k]);
+    eventCache.forEach(evt => {
+        const repoName = evt.repo.name;
+        if (!repoStats[repoName]) repoStats[repoName] = 0;
+        repoStats[repoName]++;
     });
 }
 
@@ -235,7 +249,7 @@ app.get('/api/stats/dashboard', (req, res) => {
 
     const nowIdx = WINDOW_MINUTES;
     const stats = {
-        last5min: mainTree.rangeSum(Math.max(1, nowIdx - 4), nowIdx),
+        last10min: mainTree.rangeSum(Math.max(1, nowIdx - 9), nowIdx),
         last15min: mainTree.rangeSum(Math.max(1, nowIdx - 14), nowIdx),
         last60min: mainTree.prefixSum(nowIdx),
         peak: findPeakInterval(),
@@ -273,6 +287,27 @@ function getDistribution() {
     });
     return dist;
 }
+
+/**
+ * 3. GET /api/stats/extended
+ */
+app.get('/api/stats/extended', (req, res) => {
+    const topRepos = Object.entries(repoStats)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([name, count]) => ({ name, count }));
+
+    // BIT Internal Structure (for visualizer)
+    const bitStructure = {
+        main: Array.from(mainTree.tree),
+        size: mainTree.size
+    };
+
+    res.json({
+        topRepos,
+        bitStructure
+    });
+});
 
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
